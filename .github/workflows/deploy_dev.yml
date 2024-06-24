@@ -1,0 +1,41 @@
+name: Deploy DEV fastapi-init
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+      id-token: write
+      contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          audience: ${{ secrets.LUNAR_AWS_IDP_AUDIENCE_DEPLOY_DEV }}
+          role-to-assume: ${{ secrets.LUNAR_AWS_ASSUME_ROLE_DEPLOY_DEV }}
+          role-session-name: OIDCSession
+          aws-region: ap-northeast-2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and deploy
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECS_CLUSTER:  "lunar"
+          SERVICE_NAME: "lunar-fastapi-init"
+          STACK: "dev"
+        run: |
+          echo $LATEST_TAG
+          docker build --build-arg VERSION=$(date +%Y%m%d) --build-arg STACK=$STACK -t $ECR_REGISTRY/$SERVICE_NAME:$GITHUB_SHA -t $ECR_REGISTRY/$SERVICE_NAME:latest .
+          docker push -a $ECR_REGISTRY/$SERVICE_NAME
+          aws ecs update-service --cluster $ECS_CLUSTER --service $SERVICE_NAME --task-definition $SERVICE_NAME --force-new-deployment
